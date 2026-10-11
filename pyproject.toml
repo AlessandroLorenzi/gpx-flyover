@@ -1,0 +1,25 @@
+[project]
+name = "gpx-flyover"
+version = "0.1.0"
+description = "Genera un video 3D di sorvolo da una o più tracce GPX"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=1.26",
+    "scipy>=1.11",
+    "pillow>=10",
+    "requests>=2.31",
+]
+
+[project.scripts]
+flyover = "gpx_flyover.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/gpx_flyover"]
