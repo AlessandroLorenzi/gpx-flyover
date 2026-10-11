@@ -64,6 +64,16 @@ def _ease(n: int) -> np.ndarray:
     return ((1 - np.cos(np.pi * np.linspace(0, 1, n))) / 2)[:, None]
 
 
+def segment_fractions(segs: list[Segment]) -> list[float]:
+    """Frazione di percorso (in pianta) a cui inizia ogni tratto."""
+    lat = np.concatenate([s.lat for s in segs])
+    lon = np.concatenate([s.lon for s in segs])
+    mx, my = tiles.merc(lat, lon)
+    d = np.r_[0, np.cumsum(np.hypot(np.diff(mx), np.diff(my)))]
+    starts = np.cumsum([0] + [len(sg.lat) for sg in segs[:-1]])
+    return (d[starts] / d[-1]).tolist()
+
+
 def build(segs: list[Segment], tl: Timeline, workdir: Path, fix_colors: bool = True) -> dict:
     """Scarica i dati, scrive scene.npz e le ortofoto in workdir. Restituisce i metadati per gli overlay."""
     lat = np.concatenate([s.lat for s in segs])
@@ -114,9 +124,6 @@ def build(segs: list[Segment], tl: Timeline, workdir: Path, fix_colors: bool = T
     px, py = to_m(tmx, tmy)
     P = np.c_[px, py]
     d = np.r_[0, np.cumsum(np.hypot(*np.diff(P, axis=0).T))]
-    # frazione di percorso a cui inizia ogni tratto
-    starts = np.cumsum([0] + [len(sg.lat) for sg in segs[:-1]])
-    seg_frac = (d[starts] / d[-1]).tolist()
     keep = np.r_[True, np.diff(d) > 0]
     P, d = P[keep], d[keep]
     total = float(d[-1])
@@ -167,4 +174,4 @@ def build(segs: list[Segment], tl: Timeline, workdir: Path, fix_colors: bool = T
         reveal=np.r_[np.zeros(tl.intro), u, np.ones(tl.outro + tl.hold)],
         fps=tl.fps,
     )
-    return {"total_m": total, "seg_frac": seg_frac}
+    return {"total_m": total, "seg_frac": segment_fractions(segs)}

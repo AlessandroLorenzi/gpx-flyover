@@ -87,7 +87,7 @@ def _font(pattern: str) -> str:
 
 
 def encode(workdir: Path, out: Path, fps: int, duration: float, height: int,
-           title: str, sub: str, labels: list[Label], end_title_at: float) -> None:  # fmt: skip
+           title: str, sub: str, labels: list[Label], end_title_at: float, crf: int = 26) -> None:  # fmt: skip
     txt = workdir / "txt"
     txt.mkdir(exist_ok=True)
     bold, medium = _font("Inter:bold"), _font("Inter:medium")
@@ -129,6 +129,6 @@ def encode(workdir: Path, out: Path, fps: int, duration: float, height: int,
     ]
     cmd = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-framerate", str(fps),
            "-i", str(workdir / "frames" / "f_%04d.png"), "-vf", ",".join(filters),
-           "-c:v", "libx264", "-preset", "slow", "-crf", "18", "-pix_fmt", "yuv420p",
+           "-c:v", "libx264", "-preset", "slow", "-crf", str(crf), "-pix_fmt", "yuv420p",
            "-movflags", "+faststart", str(out)]  # fmt: skip
     subprocess.run(cmd, check=True)

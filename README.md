@@ -35,6 +35,8 @@ oppure, senza installare: `uv run flyover ...`
 | `--hold` | secondi di pausa finale sulla vista d'insieme, con lenta rotazione (default 8) |
 | `--fps` | fotogrammi al secondo (default 30; 24 riduce il render del 20%) |
 | `--preview` | 960×540, 15 fps, meno campioni: utile per controllare l'inquadratura in pochi minuti |
+| `--crf` | qualità video x264 (default 26: ~50 MB per 90 s a 1080p; 18 = quasi senza perdite, ~2,5× più pesante) |
+| `--reencode` | con `--workdir`: rigenera solo il video dai fotogrammi già renderizzati (stesse `-d`/`--fps`/`--hold`) |
 | `--merged-gpx FILE` | salva anche la traccia unita (un `<trk>` con un `<trkseg>` per tratto) |
 | `--workdir DIR` | conserva dati scaricati, fotogrammi e testi (utile per ricodificare) |
 | `--no-colorfix` | disattiva l'uniformazione colore delle ortofoto |

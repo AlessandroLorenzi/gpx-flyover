@@ -11,6 +11,8 @@ import tempfile
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from PIL import Image
+
 from . import gpx, overlay, scene
 
 INTRO_S = 4.0
@@ -30,6 +32,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--hold", type=float, default=8.0, help="secondi di pausa finale sulla vista d'insieme (default: 8)")
     p.add_argument("--fps", type=int, help="fotogrammi al secondo (default: 30, in anteprima 15)")
     p.add_argument("--preview", action="store_true", help="anteprima veloce: 960x540, 15 fps, meno campioni")
+    p.add_argument("--crf", type=int, default=26, help="qualità x264: più basso = migliore e più pesante (default: 26)")
+    p.add_argument("--reencode", action="store_true", help="rigenera solo il video dai fotogrammi già in --workdir")
     p.add_argument("--merged-gpx", type=Path, help="salva anche il GPX unito in questo percorso")
     p.add_argument("--workdir", type=Path, help="cartella di lavoro (default: temporanea, cancellata alla fine)")
     p.add_argument("--no-colorfix", action="store_true", help="non uniformare i colori delle ortofoto")
@@ -60,6 +64,14 @@ def _render(blender: str, workdir: Path, width: int, height: int, samples: int, 
         raise SystemExit(f"Blender è terminato con errore ({done}/{frames} fotogrammi)")
 
 
+def _encode(a, segs, tl, workdir, out, height, title, total_km, tz, seg_frac) -> None:
+    print("Codifica video...", file=sys.stderr)
+    fps = tl.fps
+    labels = overlay.stage_labels(segs, seg_frac, tz, tl.intro / fps, (tl.intro + tl.main) / fps)
+    overlay.encode(workdir, out, fps, tl.frames / fps, height, title, overlay.subtitle(segs, total_km * 1000, tz),
+                   labels, end_title_at=(tl.intro + tl.main) / fps + 0.5, crf=a.crf)
+
+
 def main(argv: list[str] | None = None) -> None:
     a = parse_args(argv)
     if not shutil.which(a.blender):
@@ -82,6 +94,17 @@ def main(argv: list[str] | None = None) -> None:
     tl = scene.Timeline(fps, round(INTRO_S * fps), round(main_s * fps), round(OUTRO_S * fps), round(a.hold * fps))
     print(f"{len(segs)} tratti, {total_km:.1f} km -> {tl.frames / fps:.0f} s di video, {tl.frames} fotogrammi", file=sys.stderr)
 
+    if a.reencode:
+        frames = sorted((a.workdir / "frames").glob("f_*.png")) if a.workdir else []
+        if len(frames) != tl.frames:
+            raise SystemExit(f"--reencode: attesi {tl.frames} fotogrammi in --workdir/frames, trovati {len(frames)} "
+                             "(usa le stesse opzioni -d/--fps/--hold del render)")
+        with Image.open(frames[0]) as im:
+            h = im.size[1]
+        _encode(a, segs, tl, a.workdir, out, h, title, total_km, tz, scene.segment_fractions(segs))
+        print(f"Video pronto: {out}", file=sys.stderr)
+        return
+
     tmp = None
     if a.workdir:
         workdir = a.workdir
@@ -94,11 +117,7 @@ def main(argv: list[str] | None = None) -> None:
         meta = scene.build(segs, tl, workdir, fix_colors=not a.no_colorfix)
         print("Render 3D con Blender...", file=sys.stderr)
         _render(a.blender, workdir.resolve(), w, h, samples, tl.frames)
-        print("Codifica video...", file=sys.stderr)
-        duration = tl.frames / fps
-        labels = overlay.stage_labels(segs, meta["seg_frac"], tz, tl.intro / fps, (tl.intro + tl.main) / fps)
-        overlay.encode(workdir, out, fps, duration, h, title, overlay.subtitle(segs, total_km * 1000, tz), labels,
-                       end_title_at=(tl.intro + tl.main) / fps + 0.5)
+        _encode(a, segs, tl, workdir, out, h, title, total_km, tz, meta["seg_frac"])
     finally:
         if tmp:
             tmp.cleanup()
