@@ -28,6 +28,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("-t", "--title", help="titolo del video (default: nome della prima traccia)")
     p.add_argument("-d", "--duration", type=float, help="secondi di sorvolo, esclusi intro e finale (default: 3 s/km, 30-120)")
     p.add_argument("--hold", type=float, default=8.0, help="secondi di pausa finale sulla vista d'insieme (default: 8)")
+    p.add_argument("--fps", type=int, help="fotogrammi al secondo (default: 30, in anteprima 15)")
     p.add_argument("--preview", action="store_true", help="anteprima veloce: 960x540, 15 fps, meno campioni")
     p.add_argument("--merged-gpx", type=Path, help="salva anche il GPX unito in questo percorso")
     p.add_argument("--workdir", type=Path, help="cartella di lavoro (default: temporanea, cancellata alla fine)")
@@ -77,6 +78,7 @@ def main(argv: list[str] | None = None) -> None:
     total_km = sum(gpx.length_m(s) for s in segs) / 1000
     main_s = a.duration or min(120.0, max(30.0, 3 * total_km))
     fps, (w, h), samples = (15, (960, 540), 4) if a.preview else (30, (1920, 1080), 16)
+    fps = a.fps or fps
     tl = scene.Timeline(fps, round(INTRO_S * fps), round(main_s * fps), round(OUTRO_S * fps), round(a.hold * fps))
     print(f"{len(segs)} tratti, {total_km:.1f} km -> {tl.frames / fps:.0f} s di video, {tl.frames} fotogrammi", file=sys.stderr)
 

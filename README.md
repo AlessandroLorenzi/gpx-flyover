@@ -33,6 +33,7 @@ oppure, senza installare: `uv run flyover ...`
 | `-o, --output` | file di uscita (default: `<titolo>.mp4`) |
 | `-d, --duration` | secondi di sorvolo, esclusi intro (4 s), finale (6 s) e pausa finale. Default 3 s/km, tra 30 e 120 |
 | `--hold` | secondi di pausa finale sulla vista d'insieme, con lenta rotazione (default 8) |
+| `--fps` | fotogrammi al secondo (default 30; 24 riduce il render del 20%) |
 | `--preview` | 960×540, 15 fps, meno campioni: utile per controllare l'inquadratura in pochi minuti |
 | `--merged-gpx FILE` | salva anche la traccia unita (un `<trk>` con un `<trkseg>` per tratto) |
 | `--workdir DIR` | conserva dati scaricati, fotogrammi e testi (utile per ricodificare) |
