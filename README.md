@@ -1,67 +1,76 @@
 # gpx-flyover
 
-Genera un video 3D di sorvolo a partire da una o più tracce GPX: terreno reale, ortofoto
-satellitari, traccia che si disegna progressivamente e telecamera che la segue.
+Generate a 3D flyover video from one or more GPX tracks: real terrain, satellite imagery,
+a track that draws itself progressively and a camera that follows it.
 
 ```
 flyover schignano.gpx gordona.gpx posa.gpx \
   --title "Due giorni al Rifugio Prabello" -o prabello.mp4
 ```
 
-## Requisiti
+## Requirements
 
-- Python ≥ 3.11 e [uv](https://docs.astral.sh/uv/)
-- [Blender](https://www.blender.org/) ≥ 4.2 nel `PATH` (usato in background come motore di render;
-  il suo Python deve avere `numpy`, già incluso nelle build ufficiali)
-- `ffmpeg` con `libx264` e `drawtext`
-- Font consigliato: Inter (altrimenti viene usato quello trovato da `fc-match`)
+- Python ≥ 3.11 and [uv](https://docs.astral.sh/uv/)
+- [Blender](https://www.blender.org/) ≥ 4.2 in `PATH` (used headless as the render engine;
+  its bundled Python must have `numpy`, which official builds already include)
+- `ffmpeg` with `libx264` and `drawtext`
+- Recommended font: Inter (otherwise whatever `fc-match` returns is used)
 
-## Installazione
+## Installation
 
 ```
 uv tool install .
 ```
 
-oppure, senza installare: `uv run flyover ...`
+or, without installing: `uv run flyover ...`
 
-## Uso
+## Usage
 
-| Opzione | Effetto |
+| Option | Effect |
 |---|---|
-| `gpx...` | uno o più file GPX o URL diretti a GPX; tutti i tratti vengono ordinati per orario |
-| `-t, --title` | titolo mostrato in apertura e chiusura (default: nome della prima traccia) |
-| `-o, --output` | file di uscita (default: `<titolo>.mp4`) |
-| `-d, --duration` | secondi di sorvolo, esclusi intro (4 s), finale (6 s) e pausa finale. Default 3 s/km, tra 30 e 120 |
-| `--hold` | secondi di pausa finale sulla vista d'insieme, con lenta rotazione (default 8) |
-| `--fps` | fotogrammi al secondo (default 30; 24 riduce il render del 20%) |
-| `--preview` | 960×540, 15 fps, meno campioni: utile per controllare l'inquadratura in pochi minuti |
-| `--crf` | qualità video x264 (default 26: ~50 MB per 90 s a 1080p; 18 = quasi senza perdite, ~2,5× più pesante) |
-| `--reencode` | con `--workdir`: rigenera solo il video dai fotogrammi già renderizzati (stesse `-d`/`--fps`/`--hold`) |
-| `--merged-gpx FILE` | salva anche la traccia unita (un `<trk>` con un `<trkseg>` per tratto) |
-| `--workdir DIR` | conserva dati scaricati, fotogrammi e testi (utile per ricodificare) |
-| `--no-colorfix` | disattiva l'uniformazione colore delle ortofoto |
-| `--tz` | fuso orario per date e numerazione dei giorni (default `Europe/Rome`) |
+| `gpx...` | one or more GPX files or direct URLs to GPX files; all segments are sorted by time |
+| `-t, --title` | title shown at the opening and at the end (default: name of the first track) |
+| `-o, --output` | output file (default: `<title>.mp4`) |
+| `-d, --duration` | seconds of flyover, excluding intro (4 s), outro (6 s) and final hold. Default 3 s/km, between 30 and 120 |
+| `--hold` | seconds of final hold on the overview, with a slow orbit (default 8) |
+| `--fps` | frames per second (default 30; 24 cuts render time by 20%) |
+| `--preview` | 960×540, 15 fps, fewer samples: useful to check framing in a few minutes |
+| `--crf` | x264 video quality (default 26: ~50 MB for 90 s at 1080p; 18 = nearly lossless, ~2.5× larger) |
+| `--reencode` | with `--workdir`: rebuild only the video from already-rendered frames (same `-d`/`--fps`/`--hold`) |
+| `--merged-gpx FILE` | also save the merged track (one `<trk>` with one `<trkseg>` per segment) |
+| `--workdir DIR` | keep downloaded data, frames and text files (useful for re-encoding) |
+| `--no-colorfix` | disable color harmonization of the orthophotos |
+| `--tz` | time zone for dates and day numbering (default `Europe/Rome`) |
+| `--blender PATH` | Blender executable (default: `blender` found in `PATH`) |
 
-Le etichette in basso a sinistra mostrano il nome di ogni traccia; se l'escursione dura più
-giorni vengono precedute da "Giorno N". Il sottotitolo riporta date e distanza totale.
+The labels in the bottom-left corner show the name of each track; if the hike spans more
+than one day they are prefixed with "Giorno N" (day N). The subtitle shows dates and total distance.
+On-screen text is in Italian (see [docs/cli.md](docs/cli.md#on-screen-text)).
 
-## Come funziona
+## How it works
 
-1. **GPX**: lettura, ordinamento dei tratti per orario, distanza.
-2. **Tile** (`~/.cache/gpx-flyover/tiles`): quote [Terrarium](https://registry.opendata.aws/terrain-tiles/)
-   e ortofoto Esri World Imagery, per un'area interna ad alta risoluzione (traccia + 2 km) e una
-   esterna a bassa risoluzione (+20 km) per l'orizzonte.
-3. **Correzione colore**: le ortofoto Esri mescolano fonti diverse (es. swisstopo), che appaiono
-   come blocchi più chiari. I blocchi vengono individuati per saturazione/luminosità e portati
-   ai colori del resto dell'immagine. È euristica: zone sfocate o con ombre forti già presenti
-   nelle ortofoto restano.
-4. **Scena**: mesh del terreno, traccia ricampionata ogni 4 m, telecamera che segue la traccia
-   da dietro e dall'alto con direzione smussata.
-5. **Render** con Blender EEVEE in background, poi **ffmpeg** aggiunge titolo, tappe e crediti.
+1. **GPX**: parsing, sorting segments by time, distance.
+2. **Tiles** (`~/.cache/gpx-flyover/tiles`): [Terrarium](https://registry.opendata.aws/terrain-tiles/)
+   elevation and Esri World Imagery orthophotos, for a high-resolution inner area (track + 2 km)
+   and a low-resolution outer area (+20 km) for the horizon.
+3. **Color correction**: Esri orthophotos mix different sources (e.g. swisstopo), which show up
+   as lighter blocks. These blocks are detected by saturation/brightness and brought to the colors
+   of the rest of the image. It is a heuristic: blurry areas or strong shadows already present
+   in the orthophotos remain.
+4. **Scene**: terrain mesh, track resampled every 4 m, camera following the track from behind
+   and above with a smoothed heading.
+5. **Render** with Blender EEVEE in background, then **ffmpeg** adds title, stages and credits.
 
-Tempi indicativi su un portatile a 8 core: ~1,8 s per fotogramma a 1080p (≈ 1 ora per 85 s di video).
+Indicative timings on an 8-core laptop: ~1.8 s per frame at 1080p (≈ 1 hour for 85 s of video).
 
-## Licenze dei dati
+## Documentation
 
-Ortofoto © Esri e fornitori (uso personale, con attribuzione); quote Mapzen Terrarium
-(fonti varie, vedi registry AWS). L'attribuzione viene inserita nel video.
+- [Architecture](docs/architecture.md): pipeline, modules, data flow, work directory
+- [CLI reference](docs/cli.md): every option in detail, video timeline, recipes
+- [Internals](docs/internals.md): coordinates, tiles, terrain, camera, Blender scene, overlays, color correction
+- [Development](docs/development.md): setup, tests, troubleshooting, known limitations
+
+## Data licenses
+
+Orthophotos © Esri and suppliers (personal use, with attribution); Mapzen Terrarium elevation
+(various sources, see the AWS registry). Attribution is burned into the video.
