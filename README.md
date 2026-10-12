@@ -75,3 +75,7 @@ Indicative timings on an 8-core laptop: ~1.8 s per frame at 1080p (≈ 1 hour fo
 
 Orthophotos © Esri and suppliers (personal use, with attribution); Mapzen Terrarium elevation
 (various sources, see the AWS registry). Attribution is burned into the video.
+
+## License
+
+Code released under the [MIT License](LICENSE). Map and elevation data keep their own licenses (see above).
