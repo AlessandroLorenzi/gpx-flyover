@@ -11,13 +11,14 @@ import numpy as np
 from scipy.ndimage import gaussian_filter1d, map_coordinates
 
 from . import colorfix, tiles
-from .gpx import Segment
+from .gpx import Segment, haversine
 
 EARTH_CIRC = 40075016.686
 INNER_PAD_KM = 2.0
 OUTER_PAD_KM = 20.0
 TRACK_LIFT_M = 3.0  # la traccia galleggia appena sopra il terreno
 RESAMPLE_M = 4.0
+MAX_GAP_M = 500.0  # oltre questa distanza tra due tratti consecutivi non si traccia la linea: stacco
 
 # Telecamera: distanze in metri, smoothing espresso in metri di traccia
 CAM_BACK_M = 650
@@ -64,17 +65,43 @@ def _ease(n: int) -> np.ndarray:
     return ((1 - np.cos(np.pi * np.linspace(0, 1, n))) / 2)[:, None]
 
 
-def segment_fractions(segs: list[Segment]) -> list[float]:
-    """Frazione di percorso (in pianta) a cui inizia ogni tratto."""
+def pieces(segs: list[Segment], max_gap_m: float = MAX_GAP_M) -> list[list[int]]:
+    """Raggruppa i tratti consecutivi distanti al più max_gap_m: ogni gruppo è una linea continua."""
+    groups = [[0]]
+    for i in range(1, len(segs)):
+        a, b = segs[i - 1], segs[i]
+        if haversine(a.lat[-1], a.lon[-1], b.lat[0], b.lon[0]) > max_gap_m:
+            groups.append([])
+        groups[-1].append(i)
+    return groups
+
+
+def segment_fractions(segs: list[Segment], max_gap_m: float = MAX_GAP_M) -> list[float]:
+    """Frazione di percorso (in pianta) a cui inizia ogni tratto, esclusi i salti tra un gruppo e l'altro."""
     lat = np.concatenate([s.lat for s in segs])
     lon = np.concatenate([s.lon for s in segs])
     mx, my = tiles.merc(lat, lon)
-    d = np.r_[0, np.cumsum(np.hypot(np.diff(mx), np.diff(my)))]
+    step = np.hypot(np.diff(mx), np.diff(my))
     starts = np.cumsum([0] + [len(sg.lat) for sg in segs[:-1]])
+    for g in pieces(segs, max_gap_m)[1:]:
+        step[starts[g[0]] - 1] = 0
+    d = np.r_[0, np.cumsum(step)]
     return (d[starts] / d[-1]).tolist()
 
 
-def build(segs: list[Segment], tl: Timeline, workdir: Path, fix_colors: bool = True) -> dict:
+def _resample(P: np.ndarray) -> np.ndarray:
+    """Polilinea in pianta ricampionata a passo costante e appena smussata."""
+    d = np.r_[0, np.cumsum(np.hypot(*np.diff(P, axis=0).T))]
+    keep = np.r_[True, np.diff(d) > 0]
+    P, d = P[keep], d[keep]
+    s = np.arange(0, d[-1], RESAMPLE_M)
+    if len(s) < 2:
+        return np.empty((0, 2))
+    return gaussian_filter1d(np.c_[np.interp(s, d, P[:, 0]), np.interp(s, d, P[:, 1])], 1.5, axis=0)
+
+
+def build(segs: list[Segment], tl: Timeline, workdir: Path, fix_colors: bool = True,
+          max_gap_m: float = MAX_GAP_M) -> dict:  # fmt: skip
     """Scarica i dati, scrive scene.npz e le ortofoto in workdir. Restituisce i metadati per gli overlay."""
     lat = np.concatenate([s.lat for s in segs])
     lon = np.concatenate([s.lon for s in segs])
@@ -120,32 +147,49 @@ def build(segs: list[Segment], tl: Timeline, workdir: Path, fix_colors: bool = T
     z_out -= 4
     ext_out = np.array([*to_m(gxo[[0, -1]], gyo[[0, -1]])]).ravel()
 
-    # traccia ricampionata a passo costante
+    # traccia ricampionata a passo costante, un pezzo per ogni gruppo di tratti vicini
     px, py = to_m(tmx, tmy)
-    P = np.c_[px, py]
-    d = np.r_[0, np.cumsum(np.hypot(*np.diff(P, axis=0).T))]
-    keep = np.r_[True, np.diff(d) > 0]
-    P, d = P[keep], d[keep]
-    total = float(d[-1])
-    s = np.arange(0, total, RESAMPLE_M)
-    T = gaussian_filter1d(np.c_[np.interp(s, d, P[:, 0]), np.interp(s, d, P[:, 1])], 1.5, axis=0)
+    starts = np.cumsum([0] + [len(sg.lat) for sg in segs])
+    parts = [_resample(np.c_[px, py][starts[g[0]] : starts[g[-1] + 1]]) for g in pieces(segs, max_gap_m)]
+    parts = [T for T in parts if len(T) >= 2]
+    if not parts:
+        raise ValueError("Traccia troppo corta")
+    T = np.concatenate(parts)
+    breaks = np.cumsum([0] + [len(T) for T in parts[:-1]])  # indice del primo punto di ogni pezzo
     track = np.c_[T, dem_i(*to_merc(T[:, 0], T[:, 1])) + TRACK_LIFT_M]
+    total = (len(track) - len(parts)) * RESAMPLE_M
 
-    # telecamera
+    def ground(x, y):
+        g = dem_o(*to_merc(x, y))
+        inner = (x > ext_in[0]) & (x < ext_in[1]) & (y < ext_in[2]) & (y > ext_in[3])
+        g[inner] = dem_i(*to_merc(x[inner], y[inner]))
+        return g
+
+    # telecamera: i fotogrammi sono ripartiti tra i pezzi in proporzione alla lunghezza e ogni pezzo
+    # ha il suo inseguimento, così al passaggio da un pezzo all'altro c'è uno stacco netto
     per_m = tl.main / total  # frame per metro
     sig = lambda m: max(1.0, m * per_m)  # noqa: E731
     u = np.linspace(0, 1, tl.main)
     idx = u * (len(track) - 1)
-    look = np.c_[[np.interp(idx, np.arange(len(track)), track[:, k]) for k in range(3)]].T
-    look = gaussian_filter1d(look, sig(SMOOTH_LOOK_M), axis=0, mode="nearest")
-    hp = gaussian_filter1d(look[:, :2], sig(SMOOTH_HEADING_PATH_M), axis=0, mode="nearest")
-    dv = np.gradient(hp, axis=0)
-    ang = gaussian_filter1d(np.unwrap(np.arctan2(dv[:, 1], dv[:, 0])), sig(SMOOTH_HEADING_ANGLE_M), mode="nearest")
-    cam = np.c_[look[:, 0] - CAM_BACK_M * np.cos(ang), look[:, 1] - CAM_BACK_M * np.sin(ang), look[:, 2] + CAM_UP_M]
-    ground = dem_o(*to_merc(cam[:, 0], cam[:, 1]))
-    inner = (cam[:, 0] > ext_in[0]) & (cam[:, 0] < ext_in[1]) & (cam[:, 1] < ext_in[2]) & (cam[:, 1] > ext_in[3])
-    ground[inner] = dem_i(*to_merc(cam[inner, 0], cam[inner, 1]))
-    cam[:, 2] = gaussian_filter1d(np.maximum(cam[:, 2], ground + CAM_MIN_CLEARANCE_M), sig(SMOOTH_HEIGHT_M), mode="nearest")
+    piece = np.searchsorted(breaks, idx, side="right") - 1
+    ends = np.r_[breaks[1:], len(track)] - 1
+    idx = np.minimum(idx, ends[piece])  # niente interpolazione attraverso il salto
+    look_all = np.c_[[np.interp(idx, np.arange(len(track)), track[:, k]) for k in range(3)]].T
+    looks, cams, angs = [], [], []
+    for p in range(len(parts)):
+        look = look_all[piece == p]
+        if not len(look):
+            continue
+        look = gaussian_filter1d(look, sig(SMOOTH_LOOK_M), axis=0, mode="nearest")
+        hp = gaussian_filter1d(look[:, :2], sig(SMOOTH_HEADING_PATH_M), axis=0, mode="nearest")
+        dv = np.gradient(hp, axis=0) if len(hp) > 1 else np.ones_like(hp)
+        ang = gaussian_filter1d(np.unwrap(np.arctan2(dv[:, 1], dv[:, 0])), sig(SMOOTH_HEADING_ANGLE_M), mode="nearest")
+        cam = np.c_[look[:, 0] - CAM_BACK_M * np.cos(ang), look[:, 1] - CAM_BACK_M * np.sin(ang), look[:, 2] + CAM_UP_M]
+        cam[:, 2] = gaussian_filter1d(
+            np.maximum(cam[:, 2], ground(cam[:, 0], cam[:, 1]) + CAM_MIN_CLEARANCE_M), sig(SMOOTH_HEIGHT_M), mode="nearest"
+        )
+        looks.append(look), cams.append(cam), angs.append(ang)
+    look, cam, ang = np.concatenate(looks), np.concatenate(cams), np.concatenate(angs)
 
     # intro e finale: vista d'insieme
     span = float(np.ptp(track[:, :2], axis=0).max())
@@ -169,9 +213,10 @@ def build(segs: list[Segment], tl: Timeline, workdir: Path, fix_colors: bool = T
         Zo=z_out.astype(np.float32),
         exto=ext_out,
         track=track,
+        breaks=breaks,
         cam=np.r_[ci, cam, co, ch],
         look=np.r_[li, look, lo, lh],
         reveal=np.r_[np.zeros(tl.intro), u, np.ones(tl.outro + tl.hold)],
         fps=tl.fps,
     )
-    return {"total_m": total, "seg_frac": segment_fractions(segs)}
+    return {"total_m": total, "seg_frac": segment_fractions(segs, max_gap_m)}

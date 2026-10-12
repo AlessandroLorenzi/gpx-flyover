@@ -19,8 +19,10 @@ Local paths (`~` is expanded) or `http://` / `https://` URLs pointing directly t
 - Segment name = the `<trk><name>`, with a trailing ` - Wikiloc` removed; if missing, the file stem.
 - Segments are sorted by the timestamp of their first timed point. Segments with no timestamps
   keep their command-line order and are placed **after** all timed ones.
-- Gaps between segments are not filled: the rendered track is the concatenation of all segments,
-  so consecutive segments far apart will be joined by a straight line.
+- Consecutive segments whose gap (end of one to start of the next) is at most `--max-gap` are
+  joined into one continuous line. A larger gap starts a new **piece**: no line is drawn across
+  the gap and the camera cuts straight to the start of the next piece. The gap does not count
+  towards the flyover time.
 
 ## Options
 
@@ -34,6 +36,7 @@ Local paths (`~` is expanded) or `http://` / `https://` URLs pointing directly t
 | `--preview` | off | 960×540, 15 fps, 4 EEVEE samples (vs 1920×1080, 30 fps, 16 samples). |
 | `--crf` | `26` | x264 CRF with preset `slow`. Lower = better and larger. |
 | `--reencode` | off | Skip download and render, encode again from `--workdir/frames`. |
+| `--max-gap` | `500` | Metres between consecutive segments above which the line is broken and the camera cuts to the next segment. A huge value restores the old behaviour (one continuous line). |
 | `--merged-gpx FILE` | - | Writes one GPX 1.1 file with a single `<trk>` named after the title and one `<trkseg>` per segment. Original segment names are not preserved. |
 | `--workdir DIR` | temp dir, deleted | Keeps intermediate files. See [architecture](architecture.md#work-directory). |
 | `--no-colorfix` | off | Skips [color correction](internals.md#color-correction). |

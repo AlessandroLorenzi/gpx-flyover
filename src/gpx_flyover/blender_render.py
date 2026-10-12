@@ -68,19 +68,27 @@ def emissive(name, color, strength):
 grid_mesh("terrain", S["Z"], S["ext"]).data.materials.append(image_material("sat", f"{workdir}/sat_inner.jpg"))
 grid_mesh("outer", S["Zo"], S["exto"]).data.materials.append(image_material("sat_o", f"{workdir}/sat_outer.jpg"))
 
-# traccia: curva il cui bevel_factor_end anima il "disegno" progressivo
+# traccia: una curva per pezzo (i pezzi sono separati da uno stacco), il cui bevel_factor_end
+# anima il "disegno" progressivo
 tr = S["track"]
-cu = bpy.data.curves.new("track", "CURVE")
-cu.dimensions = "3D"
-sp = cu.splines.new("POLY")
-sp.points.add(len(tr) - 1)
-sp.points.foreach_set("co", np.c_[tr, np.ones(len(tr))].ravel().astype(np.float32))
-cu.bevel_depth = 4.5
-cu.bevel_resolution = 2
-cu.use_fill_caps = True
-cu.bevel_factor_mapping_end = "SPLINE"
-cu.materials.append(emissive("trk", (1, 0.13, 0.02), 2.0))
-sc.collection.objects.link(bpy.data.objects.new("track", cu))
+starts = [int(b) for b in S["breaks"]] if "breaks" in S else [0]
+spans = list(zip(starts, starts[1:] + [len(tr)]))
+trk_mat = emissive("trk", (1, 0.13, 0.02), 2.0)
+curves = []
+for n, (a, b) in enumerate(spans):
+    cu = bpy.data.curves.new(f"track{n}", "CURVE")
+    cu.dimensions = "3D"
+    sp = cu.splines.new("POLY")
+    sp.points.add(b - a - 1)
+    sp.points.foreach_set("co", np.c_[tr[a:b], np.ones(b - a)].ravel().astype(np.float32))
+    cu.bevel_depth = 4.5
+    cu.bevel_resolution = 2
+    cu.use_fill_caps = True
+    cu.bevel_factor_mapping_end = "SPLINE"
+    cu.materials.append(trk_mat)
+    ob = bpy.data.objects.new(f"track{n}", cu)
+    sc.collection.objects.link(ob)
+    curves.append((ob, cu, a, b))
 
 bpy.ops.mesh.primitive_uv_sphere_add(radius=12)
 marker = bpy.context.active_object
@@ -113,18 +121,22 @@ CAM, LOOK, REV = S["cam"], S["look"], S["reveal"]
 # Il bevel factor in modalità SPLINE è proporzionale alla lunghezza 3D, mentre pallina e
 # telecamera avanzano per indice di punto (passo costante in pianta): si converte l'uno nell'altro
 # così la testa della linea coincide con la pallina anche in salita.
-d3 = np.r_[0, np.cumsum(np.linalg.norm(np.diff(tr, axis=0), axis=1))]
+d3 = [np.r_[0, np.cumsum(np.linalg.norm(np.diff(tr[a:b], axis=0), axis=1))] for _, _, a, b in curves]
 for f in range(len(CAM)):
     fr = f + 1
     cam.location = Vector(CAM[f])
     cam.rotation_euler = (Vector(LOOK[f]) - Vector(CAM[f])).to_track_quat("-Z", "Y").to_euler()
     cam.keyframe_insert("location", frame=fr)
     cam.keyframe_insert("rotation_euler", frame=fr)
-    cu.bevel_factor_end = max(float(np.interp(REV[f] * (len(tr) - 1), np.arange(len(tr)), d3) / d3[-1]), 1e-4)
-    cu.keyframe_insert("bevel_factor_end", frame=fr)
     k = REV[f] * (len(tr) - 1)
+    for (ob, cu, a, b), d in zip(curves, d3):
+        ob.hide_render = bool(k < a)  # il pezzo non è ancora iniziato
+        ob.keyframe_insert("hide_render", frame=fr)
+        loc = np.interp(min(max(k - a, 0), b - a - 1), np.arange(b - a), d) / max(d[-1], 1e-6)
+        cu.bevel_factor_end = max(float(loc), 1e-4)
+        cu.keyframe_insert("bevel_factor_end", frame=fr)
     i = int(k)
-    j = min(i + 1, len(tr) - 1)
+    j = i + 1 if i + 1 < len(tr) and i + 1 not in starts else i  # non si attraversa il salto
     marker.location = Vector(tr[i] * (1 - (k - i)) + tr[j] * (k - i)) + Vector((0, 0, 6))
     marker.keyframe_insert("location", frame=fr)
 

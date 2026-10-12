@@ -115,6 +115,7 @@ When a new render starts with `--workdir`, `frames/` is wiped first; the rest is
 | `Zo` | `(640, 640)` float32 | Outer terrain heights (m) |
 | `exto` | `(4,)` | Outer extent, same convention as `ext` |
 | `track` | `(N, 3)` | Track polyline in local metres, resampled every 4 m, lifted 3 m above ground |
+| `breaks` | `(P,)` int | Index in `track` of the first point of each piece (see [internals](internals.md#track)) |
 | `cam` | `(F, 3)` | Camera position per frame |
 | `look` | `(F, 3)` | Camera target per frame |
 | `reveal` | `(F,)` | Fraction of the track drawn at each frame, 0..1 |

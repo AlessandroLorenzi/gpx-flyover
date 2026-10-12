@@ -34,6 +34,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--preview", action="store_true", help="anteprima veloce: 960x540, 15 fps, meno campioni")
     p.add_argument("--crf", type=int, default=26, help="qualità x264: più basso = migliore e più pesante (default: 26)")
     p.add_argument("--reencode", action="store_true", help="rigenera solo il video dai fotogrammi già in --workdir")
+    p.add_argument("--max-gap", type=float, default=scene.MAX_GAP_M,
+                   help="metri oltre i quali due tratti consecutivi non vengono uniti: stacco (default: 500)")  # fmt: skip
     p.add_argument("--merged-gpx", type=Path, help="salva anche il GPX unito in questo percorso")
     p.add_argument("--workdir", type=Path, help="cartella di lavoro (default: temporanea, cancellata alla fine)")
     p.add_argument("--no-colorfix", action="store_true", help="non uniformare i colori delle ortofoto")
@@ -101,7 +103,7 @@ def main(argv: list[str] | None = None) -> None:
                              "(usa le stesse opzioni -d/--fps/--hold del render)")
         with Image.open(frames[0]) as im:
             h = im.size[1]
-        _encode(a, segs, tl, a.workdir, out, h, title, total_km, tz, scene.segment_fractions(segs))
+        _encode(a, segs, tl, a.workdir, out, h, title, total_km, tz, scene.segment_fractions(segs, a.max_gap))
         print(f"Video pronto: {out}", file=sys.stderr)
         return
 
@@ -114,7 +116,7 @@ def main(argv: list[str] | None = None) -> None:
         tmp = tempfile.TemporaryDirectory(prefix="flyover-")
         workdir = Path(tmp.name)
     try:
-        meta = scene.build(segs, tl, workdir, fix_colors=not a.no_colorfix)
+        meta = scene.build(segs, tl, workdir, fix_colors=not a.no_colorfix, max_gap_m=a.max_gap)
         print("Render 3D con Blender...", file=sys.stderr)
         _render(a.blender, workdir.resolve(), w, h, samples, tl.frames)
         _encode(a, segs, tl, workdir, out, h, title, total_km, tz, meta["seg_frac"])

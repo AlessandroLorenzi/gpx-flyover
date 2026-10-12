@@ -78,7 +78,9 @@ height_m = R × 256 + G + B / 256 − 32768
 
 ```mermaid
 flowchart LR
-    A[all segment points<br/>concatenated] --> B[to local metres]
+    P[segments] --> G[group consecutive segments<br/>gap ≤ --max-gap = one piece]
+    G --> A[points of each piece<br/>concatenated]
+    A --> B[to local metres]
     B --> C[drop zero-length steps]
     C --> D[resample every<br/>RESAMPLE_M = 4 m]
     D --> E[Gaussian smoothing<br/>σ = 1.5 samples]
@@ -86,7 +88,9 @@ flowchart LR
 ```
 
 GPX elevation is **ignored**: the track is draped on the DEM, so it never floats or sinks because of
-barometer/GPS altitude errors. Resampling is done on 2D (plan) distance.
+barometer/GPS altitude errors. Resampling is done on 2D (plan) distance, separately for each
+piece; pieces shorter than two samples are dropped. The pieces are concatenated into one `track`
+array and `breaks` records the index of the first point of each piece.
 
 ## Camera
 
@@ -106,6 +110,11 @@ flowchart TD
     G --> CL["z = max(z, ground + CAM_MIN_CLEARANCE_M 180 m)"]
     CL --> Z[smooth z, SMOOTH_HEIGHT_M = 230 m]
 ```
+
+With more than one piece, each main frame is assigned to the piece that contains its point index
+(so frames are split in proportion to piece length, gaps excluded) and the whole chain above runs
+separately on each piece's frames. Smoothing therefore never blends across a gap, and the camera
+jumps from the end of one piece to the start of the next: a hard cut.
 
 Heavier smoothing of the heading than of the target means the camera swings wide on switchbacks
 instead of following every hairpin, while the target stays on the track.
@@ -145,7 +154,7 @@ on an empty factory scene.
 | Object | Construction |
 |---|---|
 | `terrain`, `outer` | Grid meshes built with `foreach_set` from `Z`/`Zo`, smooth shading, UV 0..1, Principled BSDF (roughness 1) with the orthophoto, texture extension `EXTEND` |
-| `track` | 3D POLY curve, bevel depth 4.5 m, emissive orange (strength 2) |
+| `track0`, `track1`, ... | One 3D POLY curve per piece, bevel depth 4.5 m, emissive orange (strength 2) |
 | `marker` | UV sphere r = 12 m, emissive yellow (strength 4), 6 m above the drawing head |
 | `sun` | Sun light, energy 4, angle 2°, rotation (50°, 0, 150°) |
 | `world` | Flat sky color (0.55, 0.68, 0.85), strength 0.9 |
@@ -156,7 +165,10 @@ on an empty factory scene.
 The progressive drawing animates `bevel_factor_end` with `bevel_factor_mapping_end = "SPLINE"`.
 That factor is proportional to **3D** curve length, whereas `reveal` is a fraction of point
 **index** (constant 4 m plan spacing). The script converts index → cumulative 3D distance so that
-the line's head stays exactly under the marker on steep climbs.
+the line's head stays exactly under the marker on steep climbs. With several pieces, each curve
+gets its own factor from the part of `reveal` that falls in its index range, and `hide_render` is
+keyframed so a piece is invisible until its drawing starts. The marker never interpolates across
+the gap between two pieces.
 
 ### Render settings
 

@@ -35,6 +35,7 @@ runtime with `Path(__file__).with_name("blender_render.py")`.
 | File | Covers |
 |---|---|
 | `test_gpx.py` | Wikiloc suffix stripping, segment ordering by start time, merged GPX round-trip, haversine length |
+| `test_scene.py` | Grouping segments into pieces at large gaps, segment fractions excluding the gaps |
 | `test_overlay.py` | Italian date ranges, decimal comma, stage label merging and day numbering |
 | `test_colorfix.py` | Pale block detection vs isolated tiles, water exclusion |
 
@@ -76,7 +77,8 @@ without `-b` and run the script from the Text editor to inspect the scene intera
 | `drawtext` filter not found | ffmpeg built without libfreetype; install a full build |
 | Wrong or ugly font | Inter not installed; check `fc-match Inter:bold` |
 | Bright rectangular patches on the ground | Mixed-source imagery; color correction did not catch them (try defaults) or caught the wrong areas (try `--no-colorfix`) |
-| Straight line crossing the map | Two segments far apart; they are concatenated without a gap |
+| Straight line crossing the map | Two segments closer than `--max-gap` are joined; lower it |
+| Unwanted cut in the middle of a hike | GPS gap larger than `--max-gap`; raise it |
 | Track appears in the wrong order | Segments without timestamps go last; add times or pass files in order without times |
 | "Giorno N" labels split a day oddly | Day boundaries depend on `--tz` |
 | Very blurry ground on long routes | `pick_zoom` lowered the zoom to keep the mosaic within its pixel budget; increase the `max_px` values in `scene.build` at the cost of memory |
@@ -85,8 +87,9 @@ without `-b` and run the script from the Text editor to inspect the scene intera
 
 ## Known limitations
 
-- **Single linear track.** All segments are concatenated into one polyline; there is no
-  per-segment styling and no gap handling.
+- **No per-segment styling.** Segments are only split into pieces at large gaps
+  (`--max-gap`); within a piece they form one polyline with a single style. The jump between
+  pieces is a hard cut, without a transition.
 - **Italian only.** On-screen text, month names and number formatting are hard-coded.
 - **Flat projection.** A single metres-per-unit factor is used for the whole scene; very long
   north-south routes will be slightly distorted.

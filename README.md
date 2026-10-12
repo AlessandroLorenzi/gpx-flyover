@@ -37,6 +37,7 @@ or, without installing: `uv run flyover ...`
 | `--preview` | 960×540, 15 fps, fewer samples: useful to check framing in a few minutes |
 | `--crf` | x264 video quality (default 26: ~50 MB for 90 s at 1080p; 18 = nearly lossless, ~2.5× larger) |
 | `--reencode` | with `--workdir`: rebuild only the video from already-rendered frames (same `-d`/`--fps`/`--hold`) |
+| `--max-gap` | metres between consecutive segments above which there is a cut instead of a connecting line (default 500) |
 | `--merged-gpx FILE` | also save the merged track (one `<trk>` with one `<trkseg>` per segment) |
 | `--workdir DIR` | keep downloaded data, frames and text files (useful for re-encoding) |
 | `--no-colorfix` | disable color harmonization of the orthophotos |
